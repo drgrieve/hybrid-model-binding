@@ -162,9 +162,13 @@ namespace HybridModelBinding
                 ?? hydratedModel.GetType().GetCustomAttribute<HybridBindClassAttribute>()?.DefaultBindingOrder
                 ?? fallbackBindingOrder;
 
+            var unboundProperties = new List<(PropertyInfo Property, List<string> ValueProviderIds, List<HybridBindPropertyAttribute> Attributes)>();
+
             foreach (var property in modelProperties)
             {
+#pragma warning disable CS0618 // `FromAttribute` is obsolete but still honoured.
                 var fromAttribute = property.GetCustomAttribute<FromAttribute>();
+#pragma warning restore CS0618
                 var valueProviderIds = fromAttribute?.ValueProviders.ToList() ?? new List<string>();
                 var hybridBindPropertyAttributes = property
                     .GetCustomAttributes<HybridBindPropertyAttribute>()
@@ -233,6 +237,12 @@ namespace HybridModelBinding
                                     typeof(IEnumerable).IsAssignableFrom(property.PropertyType) &&
                                     !typeof(string).IsAssignableFrom(property.PropertyType);
 
+                                // Only collections that a `List<T>` can be assigned to are filled here. Arrays, sets and
+                                // collections of complex objects are left for `BindNestedPropertiesAsync`.
+                                var canUseList = isPropertyEnumerable &&
+                                    property.PropertyType.GenericTypeArguments.Length == 1 &&
+                                    property.PropertyType.IsAssignableFrom(typeof(List<>).MakeGenericType(property.PropertyType.GenericTypeArguments[0]));
+
                                 if (matchingUriParams.Count() == 1 && !isPropertyEnumerable)
                                 {
                                     var matchingUriParam = matchingUriParams.First();
@@ -265,7 +275,19 @@ namespace HybridModelBinding
                                         hydratedBoundModel?.HybridBoundProperties?.Add(property.Name, valueProviderId);
                                     }
                                 }
-                                else if (isPropertyEnumerable)
+                                else if (isPropertyEnumerable &&
+                                    !canUseList &&
+                                    valueProvider is BodyValueProvider &&
+                                    matchingUriParams.Count == 1 &&
+                                    property.PropertyType.IsInstanceOfType(matchingUriParams[0]))
+                                {
+                                    property.SetValue(hydratedModel, matchingUriParams[0], null);
+
+                                    boundValueProviderIds.Add(valueProviderId);
+                                    boundProperties.Add(new KeyValuePair<string, string>(valueProviderId, property.Name));
+                                    hydratedBoundModel?.HybridBoundProperties?.Add(property.Name, valueProviderId);
+                                }
+                                else if (canUseList)
                                 {
                                     var descriptor = property.PropertyType.GenericTypeArguments.Any()
                                         ? TypeDescriptor.GetConverter(property.PropertyType.GenericTypeArguments.First())
@@ -321,7 +343,169 @@ namespace HybridModelBinding
                         break;
                     }
                 }
+
+                if (!boundValueProviderIds.Any())
+                {
+                    unboundProperties.Add((property, valueProviderIds, hybridBindPropertyAttributes));
+                }
             }
+
+            await BindNestedPropertiesAsync(bindingContext, hydratedModel, hydratedBoundModel, unboundProperties);
+        }
+
+        /// <summary>
+        /// The by-name pass above only understands values that convert from a single string (or a list of them).
+        /// Nested objects and collections of objects (`Address.Street`, `Changes[0].Description`, jQuery's
+        /// `changes[0][description]`, `ids[]=1`) are handed to MVC's own model binders here, one property at a time,
+        /// using the same source ordering the property would otherwise have used.
+        /// </summary>
+        private async Task BindNestedPropertiesAsync(
+            ModelBindingContext bindingContext,
+            object hydratedModel,
+            IHybridBoundModel hydratedBoundModel,
+            IList<(PropertyInfo Property, List<string> ValueProviderIds, List<HybridBindPropertyAttribute> Attributes)> unboundProperties)
+        {
+            if (!unboundProperties.Any())
+            {
+                return;
+            }
+
+            var requestServices = bindingContext.HttpContext.RequestServices;
+            var binderFactory = requestServices?.GetService(typeof(IModelBinderFactory)) as IModelBinderFactory;
+            var metadataProvider = requestServices?.GetService(typeof(IModelMetadataProvider)) as IModelMetadataProvider;
+
+            if (binderFactory == null || metadataProvider == null)
+            {
+                return;
+            }
+
+            var modelMetadata = metadataProvider.GetMetadataForType(hydratedModel.GetType());
+            var nestedValueProviders = new Dictionary<string, IValueProvider>();
+
+            foreach (var (property, valueProviderIds, attributes) in unboundProperties)
+            {
+                var propertyMetadata = modelMetadata.Properties[property.Name];
+
+                if (propertyMetadata == null ||
+                    !(propertyMetadata.IsComplexType || propertyMetadata.IsEnumerableType) ||
+                    IsFormFileType(property.PropertyType) ||
+                    propertyMetadata.BindingSource?.IsGreedy == true ||
+                    propertyMetadata.IsBindingAllowed == false)
+                {
+                    continue;
+                }
+
+                var canSet = property.SetMethod?.IsPublic == true;
+                var existingValue = property.GetValue(hydratedModel, null);
+
+                if (!canSet && existingValue == null)
+                {
+                    continue;
+                }
+
+                foreach (var valueProviderId in valueProviderIds.Distinct())
+                {
+                    if (!nestedValueProviders.TryGetValue(valueProviderId, out var valueProvider))
+                    {
+                        var factories = GetNestedValueProviderFactories(valueProviderId).ToList();
+
+                        valueProvider = factories.Any()
+                            ? await CompositeValueProvider.CreateAsync(bindingContext.ActionContext, factories)
+                            : null;
+
+                        nestedValueProviders[valueProviderId] = valueProvider;
+                    }
+
+                    var name = attributes.FirstOrDefault(x => x.ValueProviders.Contains(valueProviderId))?.Name ?? property.Name;
+
+                    if (valueProvider == null || !valueProvider.ContainsPrefix(name))
+                    {
+                        continue;
+                    }
+
+                    var binder = binderFactory.CreateBinder(new ModelBinderFactoryContext
+                    {
+                        Metadata = propertyMetadata,
+                        BindingInfo = new BindingInfo
+                        {
+                            BinderModelName = propertyMetadata.BinderModelName,
+                            BinderType = propertyMetadata.BinderType,
+                            PropertyFilterProvider = propertyMetadata.PropertyFilterProvider,
+                        },
+                        CacheToken = propertyMetadata,
+                    });
+
+                    ModelBindingResult result;
+
+                    using (bindingContext.EnterNestedScope(propertyMetadata, property.Name, name, existingValue))
+                    {
+                        bindingContext.ValueProvider = valueProvider;
+
+                        await binder.BindModelAsync(bindingContext);
+
+                        result = bindingContext.Result;
+                    }
+
+                    if (!result.IsModelSet)
+                    {
+                        continue;
+                    }
+
+                    if (canSet)
+                    {
+                        property.SetValue(hydratedModel, result.Model, null);
+                    }
+
+                    hydratedBoundModel?.HybridBoundProperties?.Add(property.Name, valueProviderId);
+
+                    break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Value-provider factories used to bind nested objects and collections for a given source.
+        /// By default: the factory registered for that source, plus MVC's jQuery-style factory for
+        /// <see cref="Source.Form"/> and <see cref="Source.QueryString"/>. Body, header and claim sources are not used.
+        /// </summary>
+        protected virtual IEnumerable<IValueProviderFactory> GetNestedValueProviderFactories(string valueProviderId)
+        {
+            if (valueProviderId != Source.Form &&
+                valueProviderId != Source.QueryString &&
+                valueProviderId != Source.Route)
+            {
+                yield break;
+            }
+
+            var registered = valueProviderFactories.FirstOrDefault(x => x.Key == valueProviderId).Value;
+
+            if (registered != null)
+            {
+                yield return registered;
+            }
+
+            if (valueProviderId == Source.Form)
+            {
+                yield return new JQueryFormValueProviderFactory();
+            }
+            else if (valueProviderId == Source.QueryString)
+            {
+                yield return new JQueryQueryStringValueProviderFactory();
+            }
+        }
+
+        private static bool IsFormFileType(Type type)
+        {
+            if (typeof(IFormFile).IsAssignableFrom(type) || typeof(IFormFileCollection).IsAssignableFrom(type))
+            {
+                return true;
+            }
+
+            var elementType = type.IsArray
+                ? type.GetElementType()
+                : type.GenericTypeArguments.FirstOrDefault();
+
+            return elementType != null && typeof(IFormFile).IsAssignableFrom(elementType);
         }
     }
 }
