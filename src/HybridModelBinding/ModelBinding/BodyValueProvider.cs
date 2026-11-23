@@ -1,8 +1,5 @@
 ﻿using HybridModelBinding.Extensions;
 using Microsoft.AspNetCore.Http;
-#if NETSTANDARD
-using Microsoft.AspNetCore.Mvc.Internal;
-#endif
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Newtonsoft.Json.Linq;
 using System;

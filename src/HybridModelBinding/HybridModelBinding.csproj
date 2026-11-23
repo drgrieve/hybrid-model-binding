@@ -1,49 +1,42 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-        <Description>Provides the ability to bind models using both ModelBinder and ValueProvider in ASP.NET Core.</Description>
-        <Authors>Bill Boga</Authors>
-        <TargetFrameworks>netcoreapp3.1;netstandard2.1</TargetFrameworks>
+        <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
         <AssemblyName>HybridModelBinding2</AssemblyName>
+        <RootNamespace>HybridModelBinding</RootNamespace>
         <PackageId>HybridModelBinding2</PackageId>
-        <MinVerMinimumMajorMinor>0.18</MinVerMinimumMajorMinor>
-        <PackageTags>hybrid;modelbinder;valueprovider;asp.net core;mvc</PackageTags>
-        <PackageProjectUrl>https://github.com/billbogaiv/hybrid-model-binding/</PackageProjectUrl>
-        <PackageLicenseUrl>https://raw.githubusercontent.com/billbogaiv/hybrid-model-binding/master/LICENSE</PackageLicenseUrl>
+        <Description>Bind one ASP.NET Core MVC model from the request body, form, route, query string, headers and claims together. A maintained fork of billbogaiv/hybrid-model-binding for current ASP.NET Core (net8.0 and net10.0) that also binds nested objects and lists of objects (including jQuery-style bracket keys such as changes[0][description]) by delegating them to MVC's own model binders.</Description>
+        <Authors>Bill Boga;David Grieve</Authors>
+        <Copyright>Copyright (c) Bill Boga, David Grieve</Copyright>
+        <PackageTags>hybrid;modelbinder;modelbinding;valueprovider;aspnetcore;mvc</PackageTags>
+        <PackageProjectUrl>https://github.com/drgrieve/hybrid-model-binding</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/drgrieve/hybrid-model-binding.git</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
         <GenerateAssemblyConfigurationAttribute>false</GenerateAssemblyConfigurationAttribute>
         <GenerateAssemblyCompanyAttribute>false</GenerateAssemblyCompanyAttribute>
         <GenerateAssemblyProductAttribute>false</GenerateAssemblyProductAttribute>
-        <UserSecretsId>56b9ce4e-e8a6-4bdd-93ea-2e005b3cdb87</UserSecretsId>
+        <MinVerTagPrefix>v</MinVerTagPrefix>
+        <MinVerMinimumMajorMinor>1.0</MinVerMinimumMajorMinor>
     </PropertyGroup>
-    <ItemGroup Condition=" '$(TargetFramework)' == 'netstandard2.1' ">
-        <PackageReference Include="Microsoft.AspNetCore.Mvc.Abstractions" Version="2.1.1" />
-        <PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.1.1" />
-        <PackageReference Include="Microsoft.AspNetCore.Http" Version="2.1.34" />
-    </ItemGroup>
-    <ItemGroup Condition=" '$(TargetFramework)' == 'netcoreapp3.1' ">
+    <PropertyGroup Condition=" '$(GITHUB_ACTIONS)' == 'true' ">
+        <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    </PropertyGroup>
+    <ItemGroup>
         <FrameworkReference Include="Microsoft.AspNetCore.App" />
-        <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+        <PackageReference Include="MinVer" Version="8.0.0">
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
     </ItemGroup>
     <ItemGroup>
-      <PackageReference Include="MinVer" Version="2.0.0">
-        <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-        <PrivateAssets>all</PrivateAssets>
-      </PackageReference>
+        <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+        <InternalsVisibleTo Include="HybridModelBinding.Tests" />
     </ItemGroup>
-    <Target Name="MinVerPreReleaseCheck" AfterTargets="MinVer" Condition="$(MinVerPreRelease.Split('.').Length) == 3">
-        <PropertyGroup>
-            <MinVerPreReleaseSuffix>$(MinVerPreRelease.Split('.')[2])</MinVerPreReleaseSuffix>
-        </PropertyGroup>
-    </Target>
-    <Target Name="MasterBranchBuild" AfterTargets="MinVerPreReleaseCheck" Condition="$(is_master_branch) == 'true' and $(MinVerPreReleaseSuffix) != ''">
-        <PropertyGroup>
-            <PackageVersion>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch)-alpha.$(MinVerPreReleaseSuffix)</PackageVersion>
-            <Version>$(PackageVersion)</Version>
-        </PropertyGroup>
-    </Target>
-    <Target Name="ReleaseBranchBuild" AfterTargets="MinVerPreReleaseCheck" Condition="$(is_release_branch) == 'true' and $(MinVerPreReleaseSuffix) != ''">
-        <PropertyGroup>
-            <PackageVersion>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch)-beta.$(MinVerPreReleaseSuffix)</PackageVersion>
-            <Version>$(PackageVersion)</Version>
-        </PropertyGroup>
-    </Target>
 </Project>
