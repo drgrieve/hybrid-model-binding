@@ -3,8 +3,8 @@
         <Description>Provides the ability to bind models using both ModelBinder and ValueProvider in ASP.NET Core.</Description>
         <Authors>Bill Boga</Authors>
         <TargetFrameworks>netcoreapp3.1;netstandard2.1</TargetFrameworks>
-        <AssemblyName>HybridModelBinding</AssemblyName>
-        <PackageId>HybridModelBinding</PackageId>
+        <AssemblyName>HybridModelBinding2</AssemblyName>
+        <PackageId>HybridModelBinding2</PackageId>
         <MinVerMinimumMajorMinor>0.18</MinVerMinimumMajorMinor>
         <PackageTags>hybrid;modelbinder;valueprovider;asp.net core;mvc</PackageTags>
         <PackageProjectUrl>https://github.com/billbogaiv/hybrid-model-binding/</PackageProjectUrl>
