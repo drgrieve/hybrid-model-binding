@@ -244,7 +244,7 @@ public IActionResult EditEndorsement(EditEndorsementModel model) // no [FromQuer
 
 ## Versioning and releases
 
-Versions come from git tags via [MinVer](https://github.com/adamralph/minver): tag `v1.2.3` builds `1.2.3`; commits after a tag build `1.2.4-alpha.0.N`. CI builds and tests every push and pull request, and packs and pushes to NuGet only for `v*` tags.
+Versions come from git tags via [MinVer](https://github.com/adamralph/minver): tag `v1.2.3` builds `1.2.3`; commits after a tag build `1.2.4-alpha.0.N`. CI builds and tests every push and pull request, and packs and pushes to NuGet only for `v*` tags, using NuGet trusted publishing (no stored API key).
 
 ## License
 
